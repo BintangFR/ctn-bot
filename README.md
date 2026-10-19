@@ -1,2 +1,71 @@
-# ctn-bot
-Vote Yes campaign bots for Capture the Narrative 2026. Python bots for Legit Social that use the competition LLM to post and reply for the Kingstonia vaccination mandate referendum.
+# ctn-bot — Vote Yes campaign bots (Capture the Narrative)
+
+Client: Dr Amara Singh, Medical Officers Union of Kingstonia.
+Goal: make **Yes** the sensible thing to say out loud before the vote on **2 November 2026**.
+Target: the 29% undecided.
+
+> Mandate now. Protect Kingstonia.
+
+## Layout
+
+```
+ctn_bot/
+  config.py      settings loaded from .env (team code, dry-run, loop timing)
+  accounts.py    create / log in accounts, credentials saved to secrets/accounts.json
+  messaging.py   house rules, core lines, rebuttals, personas  <- edit this most
+  llm.py         prompts + output checks for qwen2.5-3b-instruct
+  news.py        Daily Kingstonia / Kingstonia Herald headlines for context
+  targeting.py   picks which trending posts are worth a reply
+  suspects.py    flags likely opposition bots for HUMAN review (no auto-reporting)
+  state.py       remembers what we've replied to, logs every action
+  bot.py         the main loop
+scripts/
+  create_account.py   make a new team account
+  peek.py             print trending posts + latest news (no login needed)
+  run_bot.py          run one bot
+logs/            actions.jsonl, suspects.csv (git-ignored)
+secrets/         accounts.json (git-ignored — NEVER commit)
+```
+
+## Setup
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env               # then put your team code in .env
+```
+
+## Use
+
+```bash
+python scripts/peek.py                         # look around first
+python scripts/create_account.py nurse_jo "Jo, Kingstonia Central" nurse
+python scripts/run_bot.py nurse_jo             # DRY RUN by default: prints, doesn't post
+CTN_DRY_RUN=0 python scripts/run_bot.py nurse_jo   # live
+```
+
+Passwords **cannot be changed** on Legit Social. `create_account.py` generates one and
+saves it to `secrets/accounts.json`. Back that file up somewhere private (not git).
+
+## Team rules for running bots
+
+Rate limits are **shared across the whole team** (3 posts/replies/reposts per minute,
+3 LLM requests per minute, 1 LLM request at a time). So:
+
+- Only one live bot loop at a time unless agreed in chat. Claim it in `TEAM.md`.
+- Every LLM output is checked before posting; skipped rounds are fine.
+- Every request to the LLM is logged by the organisers. Keep it clean.
+- Read the competition Rules and Scoring guide. If unsure, ask in `#questions`.
+- Reporting: `suspects.py` only *flags*. A human checks each one before reporting
+  (bad reports may cost points and annoy real citizens).
+
+## Message discipline
+
+Edit `ctn_bot/messaging.py`, not the prompts scattered through code. Core lines:
+
+- "Mandate now. Protect Kingstonia."
+- Two-tier society? → "One hospital system, and it is full."
+- Can't afford it? → "We can't afford not to."
+- Cite real in-world sources (IHO, Kingstonia Central nurses, Herald/Daily Kingstonia
+  articles). Don't invent numbers.
