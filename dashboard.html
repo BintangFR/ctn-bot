@@ -76,8 +76,8 @@ nav .n { font-weight: 500; color: var(--muted); font-size: 12px; margin-left: 4p
 .body { margin-top: 4px; white-space: pre-wrap; word-wrap: break-word; }
 .empty { padding: 28px 14px; text-align: center; color: var(--muted); }
 .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--chip); color: var(--muted); font-size: 11px; font-weight: 600; }
-.tag.post, .tag.reply { background: var(--good-soft); color: var(--good); }
-.tag.dry_post, .tag.dry_reply { background: var(--accent-soft); color: var(--accent); }
+.tag.post, .tag.reply, .tag.convo { background: var(--good-soft); color: var(--good); }
+.tag.dry_post, .tag.dry_reply, .tag.dry_convo { background: var(--accent-soft); color: var(--accent); }
 .tag.error { background: var(--bad-soft); color: var(--bad); }
 .tag.skip { background: var(--chip); }
 .tag.t-yes-camp { background: var(--good-soft); color: var(--yes); }
@@ -361,6 +361,9 @@ footer { margin-top: 24px; color: var(--muted); font-size: 12px; }
     $("actions").innerHTML = D.actions.length ? D.actions.map((a) => {
       const extra = a.text || a.why || a.error || (a.count != null ? `${a.count} flagged → ${a.file || ""}` : "");
       const meta = [`<span class="tag ${esc(a.action)}">${esc(a.action)}</span>`, `<span title="${esc(a.t)}">${esc(ago(parseT(a.t)))}</span>`];
+      if (a.acct) meta.push(`<b style="color:var(--ink)">@${esc(a.acct)}</b>`);
+      if (a.with_user) meta.push(`with @${esc(a.with_user)}`);
+      if (a.llm) meta.push(esc(a.llm));
       if (a.to) meta.push(`reply to #${esc(a.to)}`);
       if (a.id) meta.push(`post #${esc(a.id)}`);
       return `<div class="row"><div class="meta">${meta.join("")}</div>` +
@@ -383,7 +386,7 @@ footer { margin-top: 24px; color: var(--muted); font-size: 12px; }
 
     // overview: own posts
     $("ownPosts").innerHTML = (D.own_posts || []).length ? D.own_posts.map((p) =>
-      `<div class="row"><div class="meta"><span class="tag ${esc(p.kind)}">${esc(p.kind)}</span>#${esc(p.id)} · ${esc(ago(parseT(p.t)))}${p.to ? ` · to #${esc(p.to)}` : ""}</div>` +
+      `<div class="row"><div class="meta"><span class="tag ${esc(p.kind)}">${esc(p.kind)}</span>${p.acct ? `@${esc(p.acct)} · ` : ""}#${esc(p.id)} · ${esc(ago(parseT(p.t)))}${p.to ? ` · to #${esc(p.to)}` : ""}</div>` +
       `<div class="body">${esc(p.text)}</div>` +
       (p.error ? `<div class="meta">counters unavailable: ${esc(p.error)}</div>` :
         `<div class="nums"><span><b>${esc(p.like_count || 0)}</b> likes</span><span><b>${esc(p.reply_count || 0)}</b> replies</span><span><b>${esc(p.repost_count || 0)}</b> reposts</span><span><b>${esc(p.view_count || 0)}</b> views</span></div>`) +

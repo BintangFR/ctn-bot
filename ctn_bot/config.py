@@ -14,6 +14,12 @@ LOOP_SECONDS = int(os.getenv("CTN_LOOP_SECONDS", "60"))
 ORIGINAL_EVERY = int(os.getenv("CTN_ORIGINAL_EVERY", "4"))
 MONITOR_SECONDS = int(os.getenv("CTN_MONITOR_SECONDS", "300"))
 
+# "competition" (qwen2.5-3b on llm.legitreal.com) or "ollama" (local model)
+LLM_BACKEND = os.getenv("CTN_LLM", "competition").lower()
+OLLAMA_URL = os.getenv("CTN_OLLAMA_URL", "http://localhost:11434/v1")
+OLLAMA_MODEL = os.getenv("CTN_OLLAMA_MODEL", "qwen2.5:7b")
+DRAFTS = int(os.getenv("CTN_DRAFTS", "3"))
+
 SECRETS_DIR = ROOT / "secrets"
 LOGS_DIR = ROOT / "logs"
 DATA_DIR = ROOT / "data"

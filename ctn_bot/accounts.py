@@ -44,14 +44,33 @@ def create(social: "ctn.LegitSocial", username: str, display_name: str = "", per
         data.pop(username, None)
         _save(data)
         raise
+    _store_session(username, account)
     return account
 
 
 def login(social: "ctn.LegitSocial", username: str):
+    """Resume from the saved session token if it still works, else log in and save the token.
+    Logins are limited to 5/min per network address, so tokens matter with many accounts."""
     data = _load()
     if username not in data:
         raise SystemExit(f"No saved credentials for {username}. Run scripts/create_account.py first.")
-    return social.login(username, data[username]["password"])
+    rec = data[username]
+    if rec.get("token"):
+        try:
+            return social.account_from_token(rec["token"])
+        except Exception:
+            pass  # expired: fall through to a fresh login
+    account = social.login(username, rec["password"])
+    _store_session(username, account)
+    return account
+
+
+def _store_session(username: str, account) -> None:
+    data = _load()
+    data[username]["token"] = account.token
+    if account.account_id is not None:
+        data[username]["account_id"] = account.account_id
+    _save(data)
 
 
 def persona_for(username: str) -> str:

@@ -55,11 +55,11 @@ def _username(social, author_id) -> str:
 
 
 def _own_posts(social, actions: list) -> list:
-    mine = [a for a in actions if a.get("action") in ("post", "reply") and a.get("id")]
+    mine = [a for a in actions if a.get("action") in ("post", "reply", "convo") and a.get("id")]
     out = []
     for a in mine[-OWN_POSTS_TRACKED:]:
         rec = {"id": a["id"], "kind": a["action"], "t": a.get("t"), "to": a.get("to"),
-               "text": a.get("text", "")}
+               "text": a.get("text", ""), "acct": a.get("acct", "")}
         try:
             rec.update(social.counters(a["id"]))
         except Exception as e:
