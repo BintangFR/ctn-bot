@@ -8,7 +8,12 @@ TOPIC_WORDS = (
     "hawthorne", "castillo", "iho", "jab", "health",
 )
 UNDECIDED_WORDS = ("not sure", "unsure", "undecided", "don't know", "dont know",
-                   "on the fence", "?", "worried", "confused", "convince")
+                   "on the fence", "?", "worried", "confused", "convince", "leaning")
+# Persuasion only scores when a view MOVES, so reasoned No posts are worth a reply...
+NO_SIDE_WORDS = ("vote no", "two-tier", "two tier", "choice", "keep kingstonia open",
+                 "keepkingstoniaopen", "choicenotcoercion", "coercion", "id card", "rushed")
+# ...and posts already arguing Yes are mostly preaching to the choir.
+YES_SIDE_WORDS = ("vote yes", "voting yes", "i'm voting yes", "#voteyes", "mandate now")
 
 
 def score(post: dict) -> float:
@@ -17,6 +22,9 @@ def score(post: dict) -> float:
         return 0
     s = sum(2 for w in TOPIC_WORDS if w in body)
     s += sum(3 for w in UNDECIDED_WORDS if w in body)   # the 29% are the prize
+    s += min(sum(2 for w in NO_SIDE_WORDS if w in body), 4)
+    if any(w in body for w in YES_SIDE_WORDS):
+        s -= 6
     s += min(post.get("like_count", 0) or 0, 20) * 0.2
     return s
 

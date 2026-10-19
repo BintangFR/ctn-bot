@@ -11,7 +11,7 @@ from collections import Counter
 
 import capturethenarrative as ctn
 
-from . import accounts, config, scraper, state
+from . import accounts, config, messaging, scraper, state
 
 OWN_POSTS_TRACKED = 25
 _usernames = {}  # author_id -> username, cached for the life of the monitor
@@ -40,7 +40,8 @@ def _suspects(limit: int = 100) -> list:
 
 
 def _accounts() -> list:
-    return [{"username": u, "display_name": a.get("display_name", ""), "persona": a.get("persona", "")}
+    return [{"username": u, "display_name": a.get("display_name", ""),
+             "persona": f"{messaging.persona_label(a.get('persona', ''))}: {messaging.persona_text(a.get('persona', ''))}"}
             for u, a in accounts.list_accounts().items()]
 
 

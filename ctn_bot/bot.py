@@ -8,13 +8,19 @@ from . import accounts, config, messaging, news, state, suspects, targeting
 from .llm import Writer
 
 
-def run(username: str, persona_key: str = "") -> None:
+def run(username: str, persona_key: str = "", live_after: int = None) -> None:
+    """live_after=N: draft only (dry run) for the first N rounds, then post for real."""
     social = ctn.LegitSocial()
     me = accounts.login(social, username)
     persona_key = persona_key or accounts.persona_for(username) or "default"
     writer = Writer()
     s = state.load()
-    print(f"Running {username} as '{persona_key}'. DRY_RUN={config.DRY_RUN}")
+    if me.account_id is not None and me.account_id not in s["own_author_ids"]:
+        s["own_author_ids"].append(me.account_id)
+    mode = (f"dry run for {live_after} rounds, then LIVE" if live_after is not None
+            else "DRY RUN" if config.DRY_RUN else "LIVE")
+    print(f"Running @{username} as '{persona_key}': {messaging.persona_text(persona_key)}")
+    print(f"Mode: {mode}")
 
     # Pull today's headlines into the prompts as context (titles only).
     messaging.NEWS_HOOKS[:] = [f"In the news: {h}" for h in news.headlines(3)]
@@ -22,6 +28,7 @@ def run(username: str, persona_key: str = "") -> None:
     rnd = 0
     while True:
         rnd += 1
+        dry = rnd <= live_after if live_after is not None else config.DRY_RUN
         try:
             posts = [p for p in social.feed_trending(limit=20) if p.get("body")]
             own = set(s["own_author_ids"])
@@ -30,7 +37,7 @@ def run(username: str, persona_key: str = "") -> None:
             if rnd % config.ORIGINAL_EVERY == 0:
                 text = writer.original(persona_key)
                 if text:
-                    if config.DRY_RUN:
+                    if dry:
                         state.log("dry_post", text=text)
                     else:
                         res = me.post(text)
@@ -46,7 +53,7 @@ def run(username: str, persona_key: str = "") -> None:
                     text = writer.reply(target["body"], persona_key)
                     if text:
                         pid = target["post_id"]
-                        if config.DRY_RUN:
+                        if dry:
                             state.log("dry_reply", to=pid, orig=target["body"][:80], text=text)
                         else:
                             res = me.reply(pid, text)
@@ -62,7 +69,7 @@ def run(username: str, persona_key: str = "") -> None:
                     state.log("suspects_flagged", count=n, file=str(config.SUSPECTS_CSV))
             # Heartbeat for the dashboard (scripts/monitor.py).
             s["last_round"] = {"t": time.strftime("%Y-%m-%dT%H:%M:%S"), "round": rnd,
-                               "username": username, "dry_run": config.DRY_RUN}
+                               "username": username, "dry_run": dry, "persona": persona_key}
             rl = getattr(social, "rate_limit", None)
             if rl:
                 s["rate_limit"] = {k: getattr(rl, k, None) for k in ("limit", "remaining", "reset")}

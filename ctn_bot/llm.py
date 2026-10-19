@@ -34,6 +34,7 @@ class Writer:
             f"You are {messaging.persona_text(persona_key)}, posting on Legit Social, "
             f"a Kingstonia social network. You support Yes in the vaccination mandate "
             f"referendum on {config.VOTE_DATE}.\n"
+            "Always speak as yourself. Never claim the other person's job, family or experiences.\n"
             f"Facts you may use (use no others):\n{facts}\n"
             f"Style:\n{rules}\n"
         )
