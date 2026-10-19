@@ -35,7 +35,7 @@ def run(username: str, persona_key: str = "") -> None:
                     else:
                         res = me.post(text)
                         _remember_self(s, res)
-                        state.log("post", text=text)
+                        state.log("post", id=_post_id(res), text=text)
                 else:
                     state.log("skip", why="bad original output")
             else:
@@ -51,7 +51,7 @@ def run(username: str, persona_key: str = "") -> None:
                         else:
                             res = me.reply(pid, text)
                             _remember_self(s, res)
-                            state.log("reply", to=pid, text=text)
+                            state.log("reply", id=_post_id(res), to=pid, text=text)
                         s["replied"].append(pid)
                     else:
                         state.log("skip", why="bad reply output")
@@ -60,6 +60,12 @@ def run(username: str, persona_key: str = "") -> None:
                 n = suspects.flush()
                 if n:
                     state.log("suspects_flagged", count=n, file=str(config.SUSPECTS_CSV))
+            # Heartbeat for the dashboard (scripts/monitor.py).
+            s["last_round"] = {"t": time.strftime("%Y-%m-%dT%H:%M:%S"), "round": rnd,
+                               "username": username, "dry_run": config.DRY_RUN}
+            rl = getattr(social, "rate_limit", None)
+            if rl:
+                s["rate_limit"] = {k: getattr(rl, k, None) for k in ("limit", "remaining", "reset")}
             state.save(s)
         except KeyboardInterrupt:
             raise
@@ -70,6 +76,10 @@ def run(username: str, persona_key: str = "") -> None:
         if rl:
             print("rate_limit:", rl)
         time.sleep(config.LOOP_SECONDS + random.randint(0, 15))
+
+
+def _post_id(res):
+    return res.get("post_id") if isinstance(res, dict) else None
 
 
 def _remember_self(s: dict, res) -> None:

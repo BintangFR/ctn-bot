@@ -19,13 +19,30 @@ ctn_bot/
   suspects.py    flags likely opposition bots for HUMAN review (no auto-reporting)
   state.py       remembers what we've replied to, logs every action
   bot.py         the main loop
+  scraper.py     collects every article (full text) from both papers into data/news/
+  dashboard.py   builds the snapshot shown by dashboard.html
 scripts/
   create_account.py   make a new team account
   peek.py             print trending posts + latest news (no login needed)
   run_bot.py          run one bot
+  monitor.py          scrape news + refresh dashboard every 5 min
+dashboard.html   open in a browser while monitor.py runs (reloads every 30s)
+data/news/       articles.json + one .md per article (git-ignored)
 logs/            actions.jsonl, suspects.csv (git-ignored)
 secrets/         accounts.json (git-ignored — NEVER commit)
 ```
+
+## Monitoring
+
+```bash
+python scripts/monitor.py          # leave running in its own terminal, then open dashboard.html
+python scripts/monitor.py --once   # one refresh
+```
+
+The dashboard shows bot status (running/stopped, dry run or live), every bot action,
+live likes/replies on our posts, the competition calendar and multipliers, trending posts
+and tags, all news with full text and search, flagged suspects, and team accounts
+(no passwords). Each refresh costs 1 feed read + ~30 light reads of the team allowance.
 
 ## Setup
 
