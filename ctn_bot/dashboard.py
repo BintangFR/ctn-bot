@@ -11,25 +11,65 @@ from collections import Counter
 
 import capturethenarrative as ctn
 
-from . import accounts, config, messaging, scraper, state
+from . import accounts, config, learning, messaging, scraper, state
 
 OWN_POSTS_TRACKED = 25
 _usernames = {}  # author_id -> username, cached for the life of the monitor
 
 
-def _actions(limit: int = 300):
+def _all_actions() -> list:
     if not config.ACTIONS_LOG.exists():
-        return [], {}, {}
+        return []
     rows = []
     for line in config.ACTIONS_LOG.read_text(encoding="utf-8", errors="replace").splitlines():
         try:
             rows.append(json.loads(line))
         except ValueError:
             pass
+    return rows
+
+
+def _actions(limit: int = 300):
+    rows = _all_actions()
     today = time.strftime("%Y-%m-%d")
     total = Counter(r.get("action") for r in rows)
     today_counts = Counter(r.get("action") for r in rows if r.get("t", "").startswith(today))
     return rows[-limit:], dict(total), dict(today_counts)
+
+
+COUNTERS_FILE = config.DATA_DIR / "counters.json"
+COUNTER_READS = 80   # posts refreshed per monitor run ("other reads" budget is 300/min)
+
+
+def _refresh_counters(social, ours: list) -> dict:
+    """Live counters for our posts, refreshing the least recently checked first."""
+    try:
+        cache = json.loads(COUNTERS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        cache = {}
+    ids = [str(a["id"]) for a in ours]
+    ids.sort(key=lambda i: cache.get(i, {}).get("checked", ""))
+    for pid in ids[:COUNTER_READS]:
+        try:
+            c = social.counters(int(pid))
+            c["checked"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+            cache[pid] = c
+        except Exception:
+            continue
+    COUNTERS_FILE.write_text(json.dumps(cache), encoding="utf-8")
+    return cache
+
+
+def _estimate(ours: list, counters: dict) -> dict:
+    """Rough Red engagement points from public counters (likes 5, reposts 10, replies 15).
+    Counters include everyone (other teams, our own accounts), and exclude persuasion,
+    views and multipliers, so this is only a trend line, not the portal score."""
+    likes = sum((counters.get(str(a["id"])) or {}).get("like_count", 0) or 0 for a in ours)
+    reposts = sum((counters.get(str(a["id"])) or {}).get("repost_count", 0) or 0 for a in ours)
+    replies = sum((counters.get(str(a["id"])) or {}).get("reply_count", 0) or 0 for a in ours)
+    return {"posts": len(ours), "checked": sum(1 for a in ours if str(a["id"]) in counters),
+            "likes": likes, "reposts": reposts, "replies": replies,
+            "points": likes * 5 + reposts * 10 + replies * 15}
 
 
 def _suspects(limit: int = 100) -> list:
@@ -106,6 +146,15 @@ def build(include_social: bool = True) -> dict:
             snap["own_posts"] = _own_posts(social, recent)
         except Exception as e:
             errors.append(f"own posts: {e}")
+        try:
+            ours = [a for a in _all_actions() if a.get("action") in ("post", "reply", "convo") and a.get("id")]
+            counters = _refresh_counters(social, ours)
+            summary = learning.summarise(ours, counters)
+            learning.save(summary)
+            snap["learning"] = summary
+            snap["estimate"] = _estimate(ours, counters)
+        except Exception as e:
+            errors.append(f"learning: {e}")
     return snap
 
 

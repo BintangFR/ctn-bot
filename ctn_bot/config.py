@@ -20,6 +20,10 @@ OLLAMA_URL = os.getenv("CTN_OLLAMA_URL", "http://localhost:11434/v1")
 OLLAMA_MODEL = os.getenv("CTN_OLLAMA_MODEL", "qwen2.5:7b")
 DRAFTS = int(os.getenv("CTN_DRAFTS", "3"))
 
+# Portal limits: MAX_ACCOUNTS registered in total, MAX_ACTIVE active at once.
+MAX_ACCOUNTS = int(os.getenv("CTN_MAX_ACCOUNTS", "200"))
+MAX_ACTIVE = int(os.getenv("CTN_MAX_ACTIVE", "50"))
+
 SECRETS_DIR = ROOT / "secrets"
 LOGS_DIR = ROOT / "logs"
 DATA_DIR = ROOT / "data"

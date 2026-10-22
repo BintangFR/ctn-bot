@@ -13,13 +13,15 @@ import time
 
 import capturethenarrative as ctn
 
-from . import accounts, config, messaging, news, state, suspects, targeting
+from . import accounts, config, learning, messaging, news, roster, scraper, state, suspects, targeting
 from .llm import Writer
+from .targeting import COMPETITOR_NAME
+
+NEWS_SHARE = 0.35        # share of original posts that react to a fresh news article
 
 MAX_CONVO_TURNS = 4      # replies to the same citizen per day, so we never look like a pest
-# Usernames that are clearly other teams' bots: talking to them scores nothing.
-COMPETITOR_NAME = re.compile(r"(ctn|team|bot\b|_bot|vote_?(yes|no)|yes_?camp|no_?camp|[0-9a-f]{6}$)", re.I)
 NOTIF_EVERY = 2          # check notifications every N rounds (cheap "other" reads)
+COOL_OFF = 1800          # seconds an account sits out after an auth error it survived
 _dry_handled = set()     # notification ids drafted during dry rounds (they stay unresolved)
 
 
@@ -39,7 +41,9 @@ def run(usernames, persona_override: str = "", live_after: int = None) -> None:
     if not team:
         raise SystemExit("No account could log in.")
     writer = Writer()
-    mode = (f"dry run for {live_after} rounds, then LIVE" if live_after is not None
+    writer.recent.extend(list(s["our_posts"].values())[-writer.recent.maxlen:])
+    s.setdefault("cold_replies", {})    # "YYYY-MM-DD:author_id" -> unprompted replies sent
+    mode =(f"dry run for {live_after} rounds, then LIVE" if live_after is not None
             else "DRY RUN" if config.DRY_RUN else "LIVE")
     print(f"Mode: {mode}. LLM: {config.LLM_BACKEND}. {len(team)} account(s) in rotation.")
 
@@ -50,6 +54,10 @@ def run(usernames, persona_override: str = "", live_after: int = None) -> None:
     while True:
         rnd += 1
         dry = rnd <= live_after if live_after is not None else config.DRY_RUN
+        for _ in range(len(team)):  # skip accounts sitting out after an auth error
+            if team[turn % len(team)].get("cool_until", 0) <= time.time():
+                break
+            turn += 1
         member = team[turn % len(team)]
         try:
             own = set(s["own_author_ids"])
@@ -60,17 +68,30 @@ def run(usernames, persona_override: str = "", live_after: int = None) -> None:
                 _answer(social, member, notif, writer, s, dry)
             elif rnd % config.ORIGINAL_EVERY == 0:
                 turn += 1
-                text = writer.original(member["persona"])
+                article = _fresh_article(s) if random.random() < NEWS_SHARE else None
+                if article:
+                    theme, style = "news", "news"
+                    text = writer.news_post(member["persona"], article)
+                else:
+                    theme = learning.choose("themes", list(messaging.THEMES))
+                    style = learning.choose("styles", list(messaging.STYLES))
+                    text = writer.original(member["persona"], theme, style)
+                meta = {"acct": member["username"], "persona": member["persona"], "theme": theme,
+                        "style": style, "llm": writer.last_backend}
+                if article:
+                    meta["article"] = article["key"]
                 if text:
                     if dry:
-                        state.log("dry_post", acct=member["username"], text=text, llm=writer.last_backend)
+                        state.log("dry_post", text=text, **meta)
                     else:
                         res = member["acct"].post(text)
                         _remember_self(s, res, text, member["username"])
-                        state.log("post", acct=member["username"], id=_post_id(res), text=text,
-                                  llm=writer.last_backend)
+                        if article:
+                            s.setdefault("used_articles", []).append(article["key"])
+                        state.log("post", id=_post_id(res), text=text, **meta)
                 else:
-                    state.log("skip", acct=member["username"], why="bad original output")
+                    state.log("skip", acct=member["username"], why="bad original output",
+                              reason=writer.last_reject)
             else:
                 turn += 1
                 posts = [p for p in social.feed_trending(limit=25) if p.get("body")]
@@ -79,7 +100,10 @@ def run(usernames, persona_override: str = "", live_after: int = None) -> None:
                 seen = {p["post_id"] for p in posts}
                 posts += [p for p in latest if p["post_id"] not in seen]
                 suspects.observe(posts, own)
-                target = targeting.pick(posts, set(s["replied"]), own)
+                today = time.strftime("%Y-%m-%d") + ":"
+                cold = {int(k[len(today):]): v for k, v in s["cold_replies"].items()
+                        if k.startswith(today) and k[len(today):].isdigit()}
+                target = targeting.pick(posts, set(s["replied"]), own, cold)
                 if not target:
                     state.log("skip", why="nothing worth replying to")
                 else:
@@ -92,10 +116,13 @@ def run(usernames, persona_override: str = "", live_after: int = None) -> None:
                         else:
                             res = member["acct"].reply_to(target, text)
                             _remember_self(s, res, text, member["username"])
+                            ckey = f"{today}{target.get('author_id')}"
+                            s["cold_replies"][ckey] = s["cold_replies"].get(ckey, 0) + 1
                             state.log("reply", acct=member["username"], id=_post_id(res), to=pid,
-                                      text=text, llm=writer.last_backend)
+                                      text=text, persona=member["persona"], llm=writer.last_backend)
                     else:
-                        state.log("skip", acct=member["username"], why="bad reply output")
+                        state.log("skip", acct=member["username"], why="bad reply output",
+                                  reason=writer.last_reject)
                     s["replied"].append(pid)  # even on a bad draft, so one post can't stall us
 
             if rnd % 10 == 0:
@@ -107,7 +134,7 @@ def run(usernames, persona_override: str = "", live_after: int = None) -> None:
         except Exception as e:
             state.log("error", acct=member["username"], error=str(e)[:300])
             if any(code in str(e) for code in ("401", "suspended", "banned")):
-                _drop(team, member, s)
+                _revive_or_drop(social, team, member, s, str(e)[:80])
                 if not team:
                     raise SystemExit("Every account is logged out or suspended.")
 
@@ -119,8 +146,20 @@ def run(usernames, persona_override: str = "", live_after: int = None) -> None:
         if rl:
             s["rate_limit"] = {k: getattr(rl, k, None) for k in ("limit", "remaining", "reset")}
         s["our_posts"] = dict(list(s["our_posts"].items())[-2000:])
+        s["cold_replies"] = dict(list(s["cold_replies"].items())[-3000:])
         state.save(s)
         time.sleep(config.LOOP_SECONDS + random.randint(0, 10))
+
+
+def _fresh_article(s):
+    """Newest referendum article from the last 36h that no account has reacted to yet."""
+    used = set(s.get("used_articles", []))
+    cutoff = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - 36 * 3600))
+    for a in scraper.articles():
+        if (a.get("published_at", "") >= cutoff and "referendum" in (a.get("topics") or [])
+                and a["key"] not in used and a.get("body")):
+            return a
+    return None
 
 
 def _posted_from_log() -> set:
@@ -195,7 +234,8 @@ def _answer(social, member, notif, writer, s, dry) -> None:
             ours = ""
     text = writer.conversation(ours, post["body"], member["persona"])
     if not text:
-        state.log("skip", acct=member["username"], why="bad conversation output")
+        state.log("skip", acct=member["username"], why="bad conversation output",
+                  reason=writer.last_reject)
     elif dry:
         _dry_handled.add(notif.get("notification_id"))
         state.log("dry_convo", acct=member["username"], to=post["post_id"],
@@ -211,7 +251,7 @@ def _answer(social, member, notif, writer, s, dry) -> None:
         s["convo_turns"][key] = s["convo_turns"].get(key, 0) + 1
         state.log("convo", acct=member["username"], id=_post_id(res), to=post["post_id"],
                   with_user=actor.get("username"), orig=post["body"][:80], text=text,
-                  llm=writer.last_backend)
+                  persona=member["persona"], llm=writer.last_backend)
     if not dry:
         _resolve(member, notif)
 
@@ -223,10 +263,60 @@ def _resolve(member, notif) -> None:
         pass
 
 
-def _drop(team, member, s) -> None:
-    if member in team:
-        team.remove(member)
-        state.log("account_dropped", acct=member["username"], remaining=len(team))
+def _revive_or_drop(social, team, member, s, err: str) -> None:
+    """An auth error. An expired token or a passing hiccup isn't a dead account: log in
+    afresh and sit the account out for a while. Only if that fails is it replaced."""
+    try:
+        member["acct"] = accounts.login(social, member["username"], fresh=True)
+        member["cool_until"] = time.time() + COOL_OFF
+        state.log("account_relogin", acct=member["username"], error=err)
+        return
+    except BaseException as e:
+        if isinstance(e, KeyboardInterrupt):
+            raise
+        why = f"{err} / login: {str(e)[:80]}"
+    _drop(social, team, member, s, why)
+
+
+def _drop(social, team, member, s, why: str) -> None:
+    """Retire a dead account and bring in a replacement, so the pool stays at MAX_ACTIVE,
+    never above. A suspended account still holds one of the portal's active places, so it is
+    deleted to free that place before a new account is registered in its stead."""
+    if member not in team:
+        return
+    team.remove(member)
+    accounts.retire(member["username"], why)
+    state.log("account_dropped", acct=member["username"], why=why, remaining=len(team))
+    if re.search(r"suspend|banned", why, re.I):
+        try:
+            member["acct"].delete()
+            state.log("account_deleted", acct=member["username"], why="suspended; frees an active place")
+        except Exception as e:
+            state.log("delete_failed", acct=member["username"], error=str(e)[:200])
+    new = accounts.promote_reserve(member["persona"]) or _register_replacement(social, member["persona"])
+    if new:
+        joined = _login_all(social, [new], "", s)
+        team.extend(joined)
+        state.log("account_promoted", acct=new, replaces=member["username"], active=len(team))
+
+
+def _register_replacement(social, persona: str):
+    """Register one new account with the same persona. Returns its username, or None."""
+    if len(accounts.list_accounts()) >= config.MAX_ACCOUNTS:
+        return None
+    taken = set(accounts.list_accounts())
+    for name, display, p in roster.generated(3, taken, random.Random(), persona or "default"):
+        try:
+            accounts.create(social, name, display, p, active=True)
+            state.log("account_created", acct=name, persona=p)
+            return name
+        except BaseException as e:
+            if isinstance(e, KeyboardInterrupt):
+                raise
+            state.log("replacement_failed", acct=name, error=str(e)[:200])
+            if "403" in str(e):
+                return None  # the portal refused: no point trying other names
+    return None
 
 
 def _post_id(res):

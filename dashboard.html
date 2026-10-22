@@ -152,6 +152,20 @@ footer { margin-top: 24px; color: var(--muted); font-size: 12px; }
       </div>
       <div style="display:grid; gap:16px; align-content:start; min-width:0">
         <div class="panel">
+          <h2>Score &amp; Poll 2 <span class="sub">needs 2,500 by Day 6</span></h2>
+          <div style="padding:12px 14px; display:grid; gap:10px">
+            <label class="meta" style="gap:8px">Portal score
+              <input id="portalScore" type="number" min="0" placeholder="type it from the portal"
+                style="font:inherit; padding:4px 8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink); width:150px">
+            </label>
+            <div id="scoreBox"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>What's working <span class="sub">avg engagement per post: likes + 2×reposts + 3×replies</span></h2>
+          <div id="learning"></div>
+        </div>
+        <div class="panel">
           <h2>Competition calendar <span class="sub">Sydney time</span></h2>
           <div id="calendar"></div>
         </div>
@@ -299,6 +313,37 @@ footer { margin-top: 24px; color: var(--muted); font-size: 12px; }
     }).join("");
   }
 
+  // ---------- score & learning ----------
+  const scoreInput = $("portalScore");
+  scoreInput.value = store.get("ctn-portal-score") || "";
+  scoreInput.addEventListener("input", () => { store.set("ctn-portal-score", scoreInput.value); renderScore(); });
+  function renderScore() {
+    const goal = 2500, typed = Number(scoreInput.value || 0), est = (D && D.estimate) || null;
+    const daysLeft = 6 - sydneyDay();
+    const pct = Math.max(0, Math.min(100, (typed / goal) * 100));
+    $("scoreBox").innerHTML =
+      `<div class="meta"><b style="color:var(--ink)">${typed ? typed.toLocaleString() : "—"} / 2,500</b>` +
+      `<span>${daysLeft > 0 ? `${daysLeft} day${daysLeft === 1 ? "" : "s"} to Poll 2` : daysLeft === 0 ? "Poll 2 is today" : "Poll 2 done"}</span>` +
+      (typed >= goal ? `<span class="tag post">eligible</span>` : "") + `</div>` +
+      `<div class="meter"><i style="width:${pct}%; ${typed >= goal ? "background:var(--good)" : ""}"></i></div>` +
+      (est ? `<div class="meta">Engagement trend from public counters: <b style="color:var(--ink)">~${est.points.toLocaleString()} pts</b>` +
+        `<span>${est.likes} likes · ${est.replies} replies · ${est.reposts} reposts on ${est.checked}/${est.posts} posts</span></div>` +
+        `<div class="meta">Rough guide only: counters include other teams' and our own activity, and leave out persuasion, views and multipliers.</div>` : "");
+  }
+  function renderLearning() {
+    const L = D && D.learning;
+    const block = (title, rows, label) => {
+      const list = Object.entries(rows || {}).sort((a, b) => b[1].score - a[1].score);
+      if (!list.length) return "";
+      const max = Math.max(...list.map(([, r]) => r.score), 1);
+      return `<div class="meta" style="padding:10px 14px 2px"><b style="color:var(--ink)">${title}</b></div><div class="bars">` +
+        list.map(([k, r]) => `<div class="bar"><span>${esc(label ? label(k) : k)} <span class="meta" style="display:inline">(${r.posts})</span></span>` +
+          `<div class="meter"><i style="width:${(r.score / max) * 100}%"></i></div><span class="num">${r.score}</span></div>`).join("") + `</div>`;
+    };
+    const html = L ? block("Themes", L.themes) + block("Endings", L.styles) + block("Personas", L.personas) + block("Post kinds", L.kinds) : "";
+    $("learning").innerHTML = html || `<div class="empty">Not enough data yet. Each refresh checks ~80 of our posts.</div>`;
+  }
+
   // ---------- state ----------
   let D = null;
   const expanded = new Set();
@@ -393,6 +438,8 @@ footer { margin-top: 24px; color: var(--muted); font-size: 12px; }
       `</div>`).join("") : `<div class="empty">Nothing posted live yet. Dry-run drafts show in Bot activity.</div>`;
 
     renderNews();
+    renderScore();
+    renderLearning();
 
     // social
     const soc = D.social;

@@ -62,6 +62,18 @@ python scripts/run_bot.py nurse_jo             # DRY RUN by default: prints, doe
 CTN_DRY_RUN=0 python scripts/run_bot.py nurse_jo   # live
 ```
 
+### Running unattended (Windows)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start_all.ps1   # Ollama + watchdog + bot (live) + monitor
+powershell -ExecutionPolicy Bypass -File scripts\stop_all.ps1    # stop all of it
+```
+
+Each job runs in a hidden window that restarts it if it stops (`scripts/supervise.ps1`);
+output goes to `logs\bot.out`, `logs\monitor.out`, `logs\ollama.out`. The watchdog restarts
+Ollama when it hangs (process alive, requests timing out). A "CTN bot" scheduled task can run
+`start_all.ps1` at logon and every 15 minutes; it is safe to run repeatedly.
+
 Passwords **cannot be changed** on Legit Social. `create_account.py` generates one and
 saves it to `secrets/accounts.json`. Back that file up somewhere private (not git).
 

@@ -28,7 +28,7 @@ for _ in range(n):
     print(f"\n--- TARGET #{t['post_id']} (score {targeting.score(t):.1f}): {t['body'][:220]}")
     print(f"    rebuttal hint: {messaging.rebuttal_for(t['body'])}")
     reply = writer.reply(t["body"], persona)
-    print(f">>> REPLY as {persona} ({len(reply)} chars): {reply or '[skipped: bad output]'}")
+    print(f">>> REPLY as {persona} ({len(reply)} chars): {reply or '[skipped: ' + writer.last_reject + ']'}")
 
 orig = writer.original(persona)
-print(f"\n>>> ORIGINAL as {persona} ({len(orig)} chars): {orig or '[skipped: bad output]'}")
+print(f"\n>>> ORIGINAL as {persona} ({len(orig)} chars): {orig or '[skipped: ' + writer.last_reject + ']'}")
